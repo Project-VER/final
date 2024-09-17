@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluetooth Audio Connection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        /* Your existing styles here */
+    </style>
+</head>
+<body>
+    <h1>Connect to Bluetooth Audio Device</h1>
+    <button id="connect-button">Connect</button>
+    <div id="connection-status"></div>
+
+    <script>
+        var socket = io();
+
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('bluetooth_status', function(data) {
+            var status = document.getElementById('connection-status');
+            if (data.connected) {
+                status.textContent = 'Connected to Bluetooth device';
+                document.getElementById('connect-button').disabled = true;
+            } else {
+                status.textContent = 'Not connected to Bluetooth device';
+                document.getElementById('connect-button').disabled = false;
+            }
+        });
+
+        document.getElementById('connect-button').addEventListener('click', function() {
+            socket.emit('request_connection');
+            document.getElementById('connection-status').textContent = 'Attempting to connect...';
+        });
+    </script>
+</body>
+</html>

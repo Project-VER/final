@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Controller</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .sidebar {
+            height: 100vh;
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .content {
+            padding: 20px;
+        }
+        .dropdown-menu {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="d-flex flex-column align-items-stretch flex-shrink-0 bg-light h-100">
+                    <a href="/" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-decoration-none">
+                        <span class="fs-4">Menu</span>
+                    </a>
+                    <hr>
+                    <ul class="nav nav-pills flex-column mb-auto">
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">
+                                Connect to Bluetooth device
+                            </a>
+                            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                                <li>
+                                    <button class="dropdown-item" id="scanButton">Scan for devices</button>
+                                </li>
+                                <li>
+                                    <ul id="device-list" class="list-group"></ul>
+                                </li>
+                            </ul>
+                        </li>
+                        <li>
+                            <a class="nav-link" href="#" id="settingsTab">Settings</a>
+                        </li>
+                        <li>
+                            <a class="nav-link" href="#" id="homeTab">Home Page</a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Main content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div id="homeContent" class="content">
+                    <h1>Home Page</h1>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="keywordTrigger">
+                        <label class="form-check-label" for="keywordTrigger">Enable Keyword Trigger</label>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="describeMode">
+                        <label class="form-check-label" for="describeMode">Describe Mode</label>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="readMode">
+                        <label class="form-check-label" for="readMode">Read Mode</label>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="chatMode">
+                        <label class="form-check-label" for="chatMode">Chat Mode</label>
+                    </div>
+                </div>
+
+                <div id="settingsContent" class="content" style="display: none;">
+                    <h1>Settings</h1>
+                    <div class="form-group">
+                        <label for="systemPrompt">System Prompt:</label>
+                        <input type="text" id="systemPrompt" class="form-control">
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        var socket = io();
+
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        // Trigger scan when the "Scan for devices" button is clicked
+        document.getElementById('scanButton').addEventListener('click', function() {
+            console.log('Scanning for devices...');
+            socket.emit('request_scan');  // Emit the scan request event to the server
+        });
+
+        // Update the list of devices when a new device is found
+        socket.on('device_found', function(device) {
+            let deviceList = document.getElementById('device-list');
+            let deviceItem = document.createElement('li');
+            deviceItem.className = 'list-group-item';
+            deviceItem.textContent = `${device.name} (${device.address})`;  // Display name and address of the device
+            deviceList.appendChild(deviceItem);
+        });
+
+        // Switch between content views
+        document.getElementById('settingsTab').addEventListener('click', function() {
+            document.getElementById('homeContent').style.display = 'none';
+            document.getElementById('settingsContent').style.display = 'block';
+        });
+
+        document.getElementById('homeTab').addEventListener('click', function() {
+            document.getElementById('homeContent').style.display = 'block';
+            document.getElementById('settingsContent').style.display = 'none';
+        });
+
+        // Function to save settings
+        function saveSettings() {
+            const systemPrompt = document.getElementById('systemPrompt').value;
+            const keywordTrigger = document.getElementById('keywordTrigger').checked;
+            const describeMode = document.getElementById('describeMode').checked;
+            const readMode = document.getElementById('readMode').checked;
+            const chatMode = document.getElementById('chatMode').checked;
+
+            const settings = {
+                systemPrompt,
+                keywordTrigger,
+                modes: {
+                    describe: describeMode,
+                    read: readMode,
+                    chat: chatMode
+                }
+            };
+
+            socket.emit('save_settings', settings);
+        }
+
+        // Event listeners for settings changes
+        document.getElementById('systemPrompt').addEventListener('change', saveSettings);
+        document.getElementById('keywordTrigger').addEventListener('change', saveSettings);
+        document.getElementById('describeMode').addEventListener('change', saveSettings);
+        document.getElementById('readMode').addEventListener('change', saveSettings);
+        document.getElementById('chatMode').addEventListener('change', saveSettings);
+
+        // Listener for settings update from server
+        socket.on('settings_updated', function(settings) {
+            document.getElementById('systemPrompt').value = settings.systemPrompt;
+            document.getElementById('keywordTrigger').checked = settings.keywordTrigger;
+            document.getElementById('describeMode').checked = settings.modes.describe;
+            document.getElementById('readMode').checked = settings.modes.read;
+            document.getElementById('chatMode').checked = settings.modes.chat;
+        });
+
+        // Request current settings on page load
+        socket.emit('request_settings');
+    </script>
+</body>
+</html>

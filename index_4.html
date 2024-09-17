@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluetooth Device Scanner</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        #scan-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+            display: block;
+            margin: 0 auto 20px;
+        }
+        #scan-button:hover {
+            background-color: #2980b9;
+        }
+        #status {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        #device-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .device-item {
+            background-color: #fff;
+            margin-bottom: 10px;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .device-item:hover {
+            background-color: #e0e7ed;
+        }
+    </style>
+</head>
+<body>
+    <h1>Connect to Bluetooth Audio Device</h1>
+    <button id="scan-button">Scan for Devices</button>
+    <div id="status">Not scanning</div>
+    <ul id="device-list"></ul>
+
+    <script>
+        var socket = io();
+
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('scan_results', function(data) {
+            var deviceList = document.getElementById('device-list');
+            deviceList.innerHTML = '';
+            data.devices.forEach(function(device) {
+                var li = document.createElement('li');
+                li.className = 'device-item';
+                li.textContent = device.name + ' (' + device.address + ')';
+                li.addEventListener('click', function() {
+                    connectToDevice(device.address);
+                });
+                deviceList.appendChild(li);
+            });
+            document.getElementById('status').textContent = 'Scan complete. Click on a device to connect.';
+        });
+
+        socket.on('bluetooth_status', function(data) {
+            if (data.connected) {
+                document.getElementById('status').textContent = 'Connected to ' + data.device;
+                document.getElementById('status').style.color = '#27ae60';
+            } else {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').style.color = '#e74c3c';
+            }
+        });
+
+        document.getElementById('scan-button').addEventListener('click', function() {
+            socket.emit('request_scan');
+            document.getElementById('status').textContent = 'Scanning...';
+            document.getElementById('status').style.color = '#f39c12';
+            document.getElementById('device-list').innerHTML = '';
+        });
+
+        function connectToDevice(address) {
+            socket.emit('request_connection', {address: address});
+            document.getElementById('status').textContent = 'Attempting to connect...';
+            document.getElementById('status').style.color = '#f39c12';
+        }
+    </script>
+</body>
+</html>
