@@ -1,3 +1,4 @@
+
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 import asyncio
@@ -81,9 +82,13 @@ def perform_scan():
 async def async_perform_scan():
     print("Starting Bluetooth scan")
     try:
+        gooddevice = []
         devices = await BleakScanner.discover(timeout=5.0)
-        print(f"Scan complete. Found {len(devices)} devices")
-        return [{"name": d.name or "Unknown", "address": d.address} for d in devices]
+        for device in devices:
+            if str(device.name) != str(device.address.replace(":", "-")):
+                gooddevice.append(device)
+        print(f"Scan complete. Found {len(gooddevice)} devices")
+        return [{"name": d.name or "Unknown", "address": d.address} for d in gooddevice ]
     except Exception as e:
         print(f"Error during Bluetooth scan: {str(e)}")
         raise
