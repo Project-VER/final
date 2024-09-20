@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluetooth Device Scanner and Connector</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <nav class="col-md-3 col-lg-2 d-md-block bg-light sidebar">
+                <div class="position-sticky pt-3">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" data-bs-toggle="collapse" data-bs-target="#bluetoothMenu">
+                                Connect to Bluetooth device
+                            </a>
+                            <div class="collapse" id="bluetoothMenu">
+                                <ul class="nav flex-column">
+                                    <li class="nav-item">
+                                        <a class="nav-link" href="#" id="scan-button">Scan for Devices</a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-bs-toggle="collapse" data-bs-target="#settingsMenu">
+                                Settings
+                            </a>
+                            <div class="collapse" id="settingsMenu">
+                                <div class="m-3">
+                                    <label for="systemPrompt" class="form-label">System Prompt</label>
+                                    <input type="text" class="form-control" id="systemPrompt">
+                                </div>
+                                <div class="m-3">
+                                    <label for="responseLength" class="form-label">Response Length</label>
+                                    <input type="range" class="form-range" id="responseLength" min="0" max="2" step="1">
+                                    <div class="d-flex justify-content-between">
+                                        <span>Short</span>
+                                        <span>Medium</span>
+                                        <span>Long</span>
+                                    </div>
+                                </div>
+                                <div class="m-3">
+                                    <button id="apply-settings" class="btn btn-primary">Apply</button>
+                                </div>
+                            </div>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-bs-toggle="collapse" data-bs-target="#homeMenu">
+                                Home page
+                            </a>
+                            <div class="collapse" id="homeMenu">
+                                <div class="m-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="keywordTrigger">
+                                        <label class="form-check-label" for="keywordTrigger">Keyword Trigger</label>
+                                    </div>
+                                    <div class="mt-2">
+                                        <strong>Operating Modes:</strong>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="describeMode">
+                                        <label class="form-check-label" for="describeMode">Describe</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="readMode">
+                                        <label class="form-check-label" for="readMode">Read</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="chatMode">
+                                        <label class="form-check-label" for="chatMode">Chat</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="content">
+                    <h1 class="mt-4">Bluetooth Device Scanner and Connector</h1>
+                    <div id="status" class="alert alert-info">Not scanning</div>
+                    <div id="device-list" class="mt-3"></div>
+                    <div class="mt-4">
+                        <h2>User Input</h2>
+                        <div class="input-group mb-3">
+                            <input type="text" id="user-input" class="form-control" placeholder="Enter your message">
+                            <button class="btn btn-primary" type="button" id="submit-button">Submit</button>
+                        </div>
+                        <div id="outputArea" class="alert alert-secondary mt-3">
+                            Output will appear here
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentSettings = {};
+
+        document.getElementById('scan-button').addEventListener('click', () => {
+            socket.emit('request_scan');
+            document.getElementById('status').textContent = 'Scanning...';
+        });
+
+        document.getElementById('submit-button').addEventListener('click', () => {
+            const userInput = document.getElementById('user-input').value;
+            socket.emit('user_input', { text: userInput });
+        });
+
+        socket.on('scan_results', (data) => {
+            const deviceList = document.getElementById('device-list');
+            deviceList.innerHTML = '';
+            if (data.devices.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'list-group';
+                data.devices.forEach(device => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item';
+                    li.textContent = `${device.name} (${device.address})`;
+                    li.addEventListener('click', () => {
+                        socket.emit('request_connection', { address: device.address });
+                    });
+                    ul.appendChild(li);
+                });
+                deviceList.appendChild(ul);
+                document.getElementById('status').textContent = `Found ${data.devices.length} devices`;
+            } else {
+                document.getElementById('status').textContent = 'No devices found';
+            }
+        });
+
+        socket.on('bluetooth_status', (data) => {
+            if (data.connected) {
+                document.getElementById('status').textContent = `Connected to ${data.device}`;
+            } else {
+                document.getElementById('status').textContent = data.error ? `Connection failed: ${data.error}` : 'Not connected';
+            }
+        });
+
+        socket.on('processed_input', (data) => {
+            document.getElementById('outputArea').textContent = data.result;
+        });
+
+        socket.on('settings_updated', (data) => {
+            currentSettings = data;
+            updateSettingsUI();
+        });
+
+        function updateSettingsUI() {
+            document.getElementById('systemPrompt').value = currentSettings.systemPrompt || '';
+            document.getElementById('keywordTrigger').checked = currentSettings.keywordTrigger || false;
+            document.getElementById('describeMode').checked = currentSettings.modes.describe || false;
+            document.getElementById('readMode').checked = currentSettings.modes.read || false;
+            document.getElementById('chatMode').checked = currentSettings.modes.chat || false;
+            
+            const responseLengthValue = {'short': 0, 'medium': 1, 'long': 2}[currentSettings.responseLength || 'medium'];
+            document.getElementById('responseLength').value = responseLengthValue;
+        }
+
+        function saveSettings() {
+            const settings = {
+                systemPrompt: document.getElementById('systemPrompt').value,
+                keywordTrigger: document.getElementById('keywordTrigger').checked,
+                modes: {
+                    describe: document.getElementById('describeMode').checked,
+                    read: document.getElementById('readMode').checked,
+                    chat: document.getElementById('chatMode').checked
+                },
+                responseLength: ['short', 'medium', 'long'][parseInt(document.getElementById('responseLength').value)]
+            };
+            socket.emit('save_settings', settings);
+        }
+
+        // Add event listener for the new Apply button
+        document.getElementById('apply-settings').addEventListener('click', saveSettings);
+
+        // Remove the automatic saving on change for settings in the Settings tab
+        document.getElementById('systemPrompt').removeEventListener('change', saveSettings);
+        document.getElementById('responseLength').removeEventListener('change', saveSettings);
+
+        // Keep the automatic saving for settings in the Home page tab
+        document.getElementById('keywordTrigger').addEventListener('change', saveSettings);
+        document.getElementById('describeMode').addEventListener('change', saveSettings);
+        document.getElementById('readMode').addEventListener('change', saveSettings);
+        document.getElementById('chatMode').addEventListener('change', saveSettings);
+
+        // Request initial settings on page load
+        socket.emit('request_settings');
+    </script>
+</body>
+</html>
