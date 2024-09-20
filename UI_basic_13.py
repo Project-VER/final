@@ -67,7 +67,7 @@ def process_user_input(input_text):
 
 @app.route('/')
 def index():
-    return render_template('index_11.html', bluetooth_connected=bluetooth_connected)
+    return render_template('index_12.html', bluetooth_connected=bluetooth_connected)
 
 @socketio.on('connect')
 def handle_connect():
