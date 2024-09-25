@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluetooth Device Scanner and Connector</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron&display=swap'); /* Futuristic font */
+
+        body {
+            background-color: #b7ebec;
+            font-family: 'Orbitron', sans-serif; /* Apply the futuristic font */
+        }
+        h1 {
+            font-size: 4rem; /* Make the title bigger */
+        }
+        .btn {
+            width: 100%; /* Full width */
+            margin-bottom: 10px; /* Spacing between buttons */
+            padding: 20px; /* Larger click area and more visible */
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <div class="container p-5">
+        <h1>Bluetooth Device Scanner and Connector</h1>
+        <div id="status" class="alert alert-info">Not scanning</div>
+        <div class="row mt-4">
+            <div class="col">
+                <button class="btn btn-primary btn-lg" data-bs-toggle="collapse" data-bs-target="#bluetoothMenu" aria-expanded="false" aria-controls="bluetoothMenu">
+                    Connect to Bluetooth Device
+                </button>
+                <div class="collapse" id="bluetoothMenu">
+                    <button class="btn btn-secondary btn-lg mt-3" id="scan-button">Scan for Devices</button>
+                </div>
+            </div>
+            <div class="col">
+                <a href="/" class="btn btn-success btn-lg">Home Page</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const scanButton = document.getElementById('scan-button');
+        const statusDiv = document.getElementById('status');
+
+        scanButton.addEventListener('click', function() {
+            statusDiv.textContent = 'Scanning for devices...';
+            socket.emit('request_scan');
+        });
+
+        socket.on('scan_results', function(data) {
+            if (data.error) {
+                statusDiv.textContent = 'Error during scan: ' + data.error;
+            } else {
+                statusDiv.textContent = 'Scan complete. Found ' + data.devices.length + ' devices.';
+                // Display the devices here
+            }
+        });
+    </script>
+</body>
+</html>
