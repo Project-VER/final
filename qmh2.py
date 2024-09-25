@@ -1,6 +1,6 @@
 '''
-File: qmh.py
-Created Date: Wednesday, September 25th 2024, 1:42:38 pm
+File: qmh2.py
+Created Date: Wednesday, September 25th 2024, 11:57:47 pm
 Author: alex-crouch
 
 Project Ver 2024
@@ -101,7 +101,7 @@ class AudioStreamer(object):
                             audio_float = audio_data.astype(np.float32) / 32768.0
                             self.stream.write(audio_float)
                         else:
-                            print('cancelled')
+                            print('Cancelled')
                             break
                 except Exception as e:
                     print(f"Error: {e}")
@@ -119,6 +119,52 @@ class AudioStreamer(object):
             print("Finished Audio Stream")
             self.stream.close()
 
+class SoundPlayer:
+    def __init__(self):
+        self.sounds = {}
+        self.current_frame = 0
+        self.data = None
+
+    def load_sound(self, name, file_path):
+        sound, sample_rate = sf.read(file_path)
+        self.sounds[name] = {"data": sound, "sample_rate": sample_rate}
+
+    def play_sound(self, name):
+        if name in self.sounds:
+            sd.play(self.sounds[name]["data"], self.sounds[name]["sample_rate"])
+        else:
+            print(f"Sound '{name}' not found")
+
+    def play_cancellable_sound(self, stop_event, name, *args):
+        if name not in self.sounds:
+            print(f"Sound '{name}' not found")
+            return
+
+        self.data = self.sounds[name]["data"].reshape(-1, 1)
+        sample_rate = self.sounds[name]["sample_rate"]
+
+        self.current_frame = 0
+
+        stream = sd.OutputStream(
+            samplerate=sample_rate, device=None, channels=1,
+            callback=self.output_callback, finished_callback=stop_event.set)
+        
+        with stream:
+            while not stop_event.is_set():
+                stop_event.wait(0.1)  # Check every 0.1 seconds
+
+    def output_callback(self, outdata, frames, time, status):
+        if status:
+            print(status)
+        chunk_size = min(len(self.data) - self.current_frame, frames)
+        outdata[:chunk_size] = self.data[self.current_frame:self.current_frame + chunk_size]
+        if chunk_size < frames:
+            outdata[chunk_size:] = 0
+            raise sd.CallbackStop()
+        self.current_frame += chunk_size
+
+    async def play_sound_async(self, name):
+        await asyncio.get_event_loop().run_in_executor(None, self.play_sound, name)
 
 class QueuedMessageHandler:
     def __init__(self):
@@ -130,27 +176,35 @@ class QueuedMessageHandler:
         self.port = 8000
         self.cancel_url = f'http://{self.base_address}:{self.port}/cancel'
         self.running = True
-        self.help = True
-        
-        # Load the sounds
-        self.cancel_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/cancel.wav')
-        self.desc_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/desc.wav')
-        self.chat_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/chat.wav')
-        self.helper_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/helper.wav')
-        self.ping_sound = self.generate_ping()
-        self.ping_samplerate = 44100
+
+        self.sound_player = SoundPlayer()
+        self.load_sounds()
 
         # Set the pre-configured prompts
         self.describe_prompt = 'Describe the content in 40 words or less. Use natural language suitable for conversion to speech.'
-        self.read_prompt = 'Read the text in 40 words or less. Include what the text represents. If there is no text respond as such. Use natural language suitable for conversion to speech.'
-
+        
         # Initialise Vosk model for speech recognition
         self.model = Model(lang="en-us")
         self.device_info = sd.query_devices(None, "input")
         self.samplerate = int(self.device_info["default_samplerate"])
         self.rec = KaldiRecognizer(self.model, self.samplerate)
         self.q = queue.Queue()
-    
+
+    def load_sounds(self):
+        sound_files = {
+            "cancel": '/home/ver/cr2/lib_client/cancel.wav',
+            "desc": '/home/ver/cr2/lib_client/desc.wav',
+            "chat": '/home/ver/cr2/lib_client/chat.wav',
+            "helper": '/home/ver/cr2/lib_client/helper.wav',
+            "waiting": '/home/ver/cr2/lib_client/waiting.wav',
+            "no_internet": '/home/ver/cr2/lib_client/internot.wav'
+        }
+        for name, file_path in sound_files.items():
+            self.sound_player.load_sound(name, file_path)
+
+        self.sound_player.sounds["ping"] = {"data": self.generate_ping(), "sample_rate": 44100}
+        # self.sound_player.load_sound("ping", )
+
     def generate_ping(self, freq1=1500, freq2=1800, duration=0.15, sample_rate=44100):
         t = np.linspace(0, duration, int(sample_rate * duration), False)
         
@@ -169,22 +223,6 @@ class QueuedMessageHandler:
         tone = tone * envelope
         
         return tone
-
-    def play_sound(self, sound):
-        sd.play(sound, self.file_samplerate)
-
-    def play_cancellable_sound(self, stop_event, sound):
-        self.data = sound.reshape(-1, 1)
-        fs = self.file_samplerate
-
-        self.current_frame = 0
-
-        stream = sd.OutputStream(
-            samplerate=fs, device=None, channels=1,
-            callback=self.output_callback, finished_callback=stop_event.set)
-        with stream:
-            while not stop_event.is_set():
-                stop_event.wait()  # Wait until playback is finished
 
     def input_callback(self, indata, frames, time, status):
         if status:
@@ -228,42 +266,59 @@ class QueuedMessageHandler:
             while not stop_event.is_set():
                 data = self.q.get() # Get audio data from the queue
                 if rec.AcceptWaveform(data):
-                    self.play_sound(self.ping_sound) # Play voice received ping
+                    self.sound_player.play_sound('ping') # Play acknowledgement ping
                     ting = json.loads(rec.Result()) # Inference on model
-                    print(ting.get("text", "")) # Format detection
+                    # print(ting.get("text", "")) # Format detection
                     return ting.get("text", "") # Format detection
 
-    def output_callback(self, outdata, frames, time, status):
-            if status:
-                print(status)
-            chunksize = min(len(self.data) - self.current_frame, frames)
-            outdata[:chunksize] = self.data[self.current_frame:self.current_frame + chunksize]
-            if chunksize < frames:
-                outdata[chunksize:] = 0
-                raise sd.CallbackStop()
-            self.current_frame += chunksize
-
-    async def audio_threader(self, target_function, target_sound):
+    async def audio_threader(self, target_function, input_cancel = False,
+        target_sound = None, image_path = None, prompt = None, que = None):
         stop_event = threading.Event()
+
+        if prompt is not None:
+            arg_list = (stop_event, image_path, prompt)
+        elif input_cancel:
+            arg_list = (que, stop_event)
+        else:
+            arg_list = (stop_event, target_sound)
+
         audio_thread = threading.Thread(
             target=target_function, 
-            args=(stop_event, target_sound), 
+            args=arg_list, 
             daemon=True
         )
         audio_thread.start()
-
+        if input_cancel or prompt is not None:
+            await asyncio.sleep(1)
+            self.mq.clear()
         while audio_thread.is_alive():
             await asyncio.sleep(0.1)
             if self.mq.count([GPIO_A, FALLING_EDGE]) != 0 or self.mq.count([GPIO_B, FALLING_EDGE]) != 0:
                 stop_event.set()
-                await asyncio.sleep(0.1)
-                break
-        audio_thread.join()
+                if prompt is not None:
+                    try:
+                        response = requests.post(self.cancel_url)
+                    except Exception as e:
+                        print(f"Error: {e}")
+                    await asyncio.sleep(0.1)  # Give a short time for the audio stream to stop
+                    await self.sound_player.play_sound_async('cancel')
+                    audio_thread.join()
+                    self.mq.clear()
+                    break
+                elif input_cancel:
+                    await self.sound_player.play_sound_async('cancel')
+                else:
+                    await asyncio.sleep(0.1)
+                    break
+        try:
+            audio_thread.join()
+        except:
+            pass
         self.mq.clear()
 
     async def state_run(self):
-        await self.audio_threader(self.play_cancellable_sound, self.helper_sound)
-                
+        await self.audio_threader(self.sound_player.play_cancellable_sound, input_cancel = False, target_sound = 'helper')
+                    
         while self.running:
             await asyncio.sleep(0.01)
 
@@ -271,97 +326,42 @@ class QueuedMessageHandler:
                 await asyncio.sleep(0.01)
                 if self.mq.count([GPIO_A, FALLING_EDGE])!=0:
                     self.state = State.CASEA
-                    self.mq.clear()
                 if self.mq.count([GPIO_B, FALLING_EDGE])!=0:
                     self.state = State.CASEB
-                    self.mq.clear()
 
             elif self.state == State.CASEA:
                 print('CASE A')
-                print(threading.active_count())
-                asyncio.create_task(self.play_sound_async(self.desc_sound))
+                asyncio.create_task(self.sound_player.play_sound_async('desc'))
 
-                stop_event = threading.Event()
-                audioS = threading.Thread(target=self.ASC.run_audio_stream,
-                    args=(stop_event,'/home/ver/cr2/lib_client/mpv-shot0001.jpg', self.describe_prompt), daemon=True)
-                audioS.start()
-                await asyncio.sleep(1)
-                self.mq.clear()
-                while audioS.is_alive(): # Allow cancel when audio stream is active
-                    await asyncio.sleep(0.01)
-                    if self.mq.count([GPIO_A, FALLING_EDGE])!=0 or self.mq.count([GPIO_B, FALLING_EDGE])!=0:
-                        stop_event.set()
-                        try:
-                            response = requests.post(self.cancel_url)
-                        except Exception as e:
-                            print(f"Error: {e}")
-                        await asyncio.sleep(0.1)  # Give a short time for the audio stream to stop
-                        await self.play_sound_async(self.cancel_sound)
-                        audioS.join()
-                        self.mq.clear()
-                        break
-                self.mq.clear()
-                try:
-                    audioS.join()
-                except:
-                    pass
+                await self.audio_threader(self.ASC.run_audio_stream, input_cancel = False,
+                    target_sound = None, image_path = '/home/ver/cr2/lib_client/mpv-shot0001.jpg',
+                    prompt = self.describe_prompt)
 
                 self.state = State.IDLE
             
             elif self.state == State.CASEB:
                 print('CASE B')
+                asyncio.create_task(self.sound_player.play_sound_async('chat'))
+
                 result = None
-                asyncio.create_task(self.play_sound_async(self.chat_sound))
-                stop_event = threading.Event()
                 que = Queue()
-                audioR = threading.Thread(target=lambda q, arg1: q.put(self.input_speech(arg1)), args=(que, stop_event), daemon=True)
-                audioR.start()
-                self.mq.clear()
-                await asyncio.sleep(1)
-                while audioR.is_alive(): # Allow cancel when audio stream is active
-                    await asyncio.sleep(0.01)
-                    if self.mq.count([GPIO_A, FALLING_EDGE])!=0 or self.mq.count([GPIO_B, FALLING_EDGE])!=0:
-                        stop_event.set()
-                        await asyncio.sleep(0.1)  # Give a short time for the audio stream to stop
-                        await self.play_sound_async(self.cancel_sound)
-                        break
-                self.mq.clear()
-                audioR.join()
+
+                await self.audio_threader(target_function = lambda q, arg1: q.put(self.input_speech(arg1)), input_cancel = True,
+                    target_sound = None, image_path = None, prompt = None, que = que)
+
                 result = que.get()
                 print(result)
-                if result == None:
-                    await self.play_sound_async(self.cancel_sound)
-                    self.mq.clear()
-                    self.state = State.IDLE
 
                 if result != None:
-                    stop_event = threading.Event()
-                    audioS = threading.Thread(target=self.ASC.run_audio_stream, name='AudioStream', args=(stop_event,'/home/ver/cr2/lib_client/mpv-shot0001.jpg', result), daemon=True)
-                    audioS.start()
-                    await asyncio.sleep(1)
+                    await self.audio_threader(self.ASC.run_audio_stream, input_cancel = False,
+                        target_sound = None, image_path = '/home/ver/cr2/lib_client/mpv-shot0001.jpg',
+                        prompt = result)
+                    self.state = State.IDLE
+                else:
+                    await self.sound_player.play_sound_async('cancel')
                     self.mq.clear()
-                    while audioS.is_alive(): # Allow cancel when audio stream is active
-                        await asyncio.sleep(0.01)
-                        if self.mq.count([GPIO_A, FALLING_EDGE])!=0 or self.mq.count([GPIO_B, FALLING_EDGE])!=0:
-                            stop_event.set()
-                            response = requests.post(self.cancel_url)
-                            await asyncio.sleep(0.1)  # Give a short time for the audio stream to stop
-                            await self.play_sound_async(self.cancel_sound)
-                            audioS.join()
-                            self.mq.clear()
-                            break
-                    stop_event.set()
-                    self.mq.clear()
-                    self.active_operation = False
-                    try:
-                        audioS.join()
-                    except:
-                        pass
                     self.state = State.IDLE
                 
-    async def play_sound_async(self, sound):
-        await asyncio.get_event_loop().run_in_executor(None, self.play_sound, sound)
-
     async def run(self):
         await asyncio.gather(
             self.async_watch_line_value("/dev/gpiochip4", [2, 3], self.done_fd),
