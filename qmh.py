@@ -35,10 +35,7 @@ class State(Enum):
     IDLE = 0
     CASEA = 1
     CASEB = 2
-    CASEB2 = 3
-    GRACE = 4
-    SEND = 5
-    PLAY = 6
+    BOOT = 3
 
 class AudioStreamer(object):
     def __init__(self, base_address='192.168.193.33', port=8000, samplerate=24000, channels=1):
@@ -52,10 +49,11 @@ class AudioStreamer(object):
         self.starttime = None
         self.call = False
         self.waiting_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/waiting.wav')
+        self.no_internet_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/internot.wav')
     
-    def play_loop(self, no_loop, sound):
+    def play_loop(self, no_loop_event, sound):
         time.sleep(2)
-        while not no_loop.is_set():
+        while not no_loop_event.is_set():
             sd.play(sound, self.file_samplerate)
             time.sleep(2)
     
@@ -78,59 +76,62 @@ class AudioStreamer(object):
         no_loop_event = threading.Event()
         audioL = threading.Thread(target=self.play_loop, args=(no_loop_event, self.waiting_sound), daemon=True)
         audioL.start()
+        try:
+            self.response = requests.get(self.url, files=files, data=data, stream=True)
 
-        self.response = requests.get(self.url, files=files, data=data, stream=True)
-        
-        no_loop_event.set()
-        audioL.join()
+            no_loop_event.set()
+            audioL.join()
 
-        with self.stream:
-            print("Audio Stream Commenced")
-            try:
-                for chunk in self.response.iter_content(chunk_size=56):
-                    if self.call is True:   # print time on first chunk if enabled
-                        elapsed_time = time.time() - self.starttime
-                        print('[{}] finished in {} ms'.format('Request to Stream', int(elapsed_time * 1_000)))
-                        self.call = False
-                    
-                    if chunk and not stop_event.is_set():  # continuously write to output device
-                        audio_data = np.frombuffer(chunk, dtype=np.int16)
-                        audio_float = audio_data.astype(np.float32) / 32768.0
-                        self.stream.write(audio_float)
-                    else:
-                        break
-            except Exception as e:
-                print(f"Error: {e}")
-            finally: # Tidy up stream and connection
-                print("Finished Audio Stream")
-                self.stream.close()
-                self.response.close()
+            with self.stream:
+                print("Audio Stream Commenced")
+                try:
+                    for chunk in self.response.iter_content(chunk_size=56):
+                        if self.call is True:   # print time on first chunk if enabled
+                            elapsed_time = time.time() - self.starttime
+                            print('[{}] finished in {} ms'.format('Request to Stream', int(elapsed_time * 1_000)))
+                            self.call = False
+                        
+                        if chunk and not stop_event.is_set():  # continuously write to output device
+                            audio_data = np.frombuffer(chunk, dtype=np.int16)
+                            audio_float = audio_data.astype(np.float32) / 32768.0
+                            self.stream.write(audio_float)
+                        else:
+                            print('cancelled')
+                            break
+                except Exception as e:
+                    print(f"Error: {e}")
+                finally:
+                    self.response.close()
+
+        except Exception as e:
+            print(f"Error: {e}")
+            no_loop_event.set()
+            audioL.join()
+            sd.play(self.no_internet_sound, self.file_samplerate)
+            sd.wait()
+
+        finally: # Tidy up stream and connection
+            print("Finished Audio Stream")
+            self.stream.close()
+
 
 class QueuedMessageHandler:
     def __init__(self):
         self.done_fd = os.eventfd(0)
         self.mq = deque()
         self.state = State.IDLE
-        self.running = True
-        self.caseb_start_time = 0
-        self.playing = False
         self.ASC = AudioStreamer()
-        self.play_task = None
-        self.cancel_event = asyncio.Event()
-        self.current_task = None
-        self.active_operation = False
         self.base_address = '192.168.193.33'
         self.port = 8000
         self.cancel_url = f'http://{self.base_address}:{self.port}/cancel'
+        self.running = True
+        self.help = True
         
         # Load the sounds
         self.cancel_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/cancel.wav')
         self.desc_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/desc.wav')
-        self.read_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/read.wav')
         self.chat_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/chat.wav')
-        self.select_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/select.wav')
-        self.help_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/help.wav')
-        self.no_internet_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/internot.wav')
+        self.helper_sound, self.file_samplerate = sf.read('/home/ver/cr2/lib_client/helper.wav')
         self.ping_sound = self.generate_ping()
         self.ping_samplerate = 44100
 
@@ -167,7 +168,20 @@ class QueuedMessageHandler:
     def play_sound(self, sound):
         sd.play(sound, self.file_samplerate)
 
-    def audio_callback(self, indata, frames, time, status):
+    def play_cancellable_sound(self, stop_event, sound):
+        self.data = sound.reshape(-1, 1)
+        fs = self.file_samplerate
+
+        self.current_frame = 0
+
+        stream = sd.OutputStream(
+            samplerate=fs, device=None, channels=1,
+            callback=self.output_callback, finished_callback=stop_event.set)
+        with stream:
+            while not stop_event.is_set():
+                stop_event.wait()  # Wait until playback is finished
+
+    def input_callback(self, indata, frames, time, status):
         if status:
             print(status, file=sys.stderr)
         self.q.put(bytes(indata))
@@ -190,7 +204,6 @@ class QueuedMessageHandler:
                 events = await asyncio.get_event_loop().run_in_executor(None, request.read_edge_events)
                 for event in events:
                     self.mq.append([event.line_offset, self.edge_type_str(event)])
-                    print(list(self.mq))
                 
                 # Check if we need to stop
                 if await self.is_done(done_fd):
@@ -204,7 +217,7 @@ class QueuedMessageHandler:
     def input_speech(self, stop_event):
         detection = None
         with sd.RawInputStream(samplerate=self.samplerate, blocksize = 8000, device=None,
-            dtype="int16", channels=1, callback=self.audio_callback): # begin recording
+            dtype="int16", channels=1, callback=self.input_callback): # begin recording
             print("Start speaking...")
             rec = KaldiRecognizer(self.model, self.samplerate)
             while not stop_event.is_set():
@@ -215,7 +228,29 @@ class QueuedMessageHandler:
                     print(ting.get("text", "")) # Format detection
                     return ting.get("text", "") # Format detection
 
+    def output_callback(self, outdata, frames, time, status):
+            if status:
+                print(status)
+            chunksize = min(len(self.data) - self.current_frame, frames)
+            outdata[:chunksize] = self.data[self.current_frame:self.current_frame + chunksize]
+            if chunksize < frames:
+                outdata[chunksize:] = 0
+                raise sd.CallbackStop()
+            self.current_frame += chunksize
+
     async def state_run(self):
+        stop_event = threading.Event()
+        audioB = threading.Thread(target=self.play_cancellable_sound, args=(stop_event, self.helper_sound), daemon=True)
+        audioB.start()
+        while audioB.is_alive(): # Allow cancel when audio stream is active
+            await asyncio.sleep(0.1)
+            if self.mq.count([GPIO_A, FALLING_EDGE])!=0 or self.mq.count([GPIO_B, FALLING_EDGE])!=0:
+                stop_event.set()
+                await asyncio.sleep(0.1)  # Give a short time for the audio stream to stop
+                break
+        audioB.join()
+        self.mq.clear()
+                
         while self.running:
             await asyncio.sleep(0.01)
 
@@ -231,7 +266,7 @@ class QueuedMessageHandler:
             elif self.state == State.CASEA:
                 print('CASE A')
                 print(threading.active_count())
-                self.current_task = asyncio.create_task(self.play_sound_async(self.desc_sound))
+                asyncio.create_task(self.play_sound_async(self.desc_sound))
                 stop_event = threading.Event()
                 audioS = threading.Thread(target=self.ASC.run_audio_stream, name='AudioStream',
                     args=(stop_event,'/home/ver/cr2/lib_client/mpv-shot0001.jpg', self.describe_prompt), daemon=True)
@@ -242,15 +277,16 @@ class QueuedMessageHandler:
                     await asyncio.sleep(0.01)
                     if self.mq.count([GPIO_A, FALLING_EDGE])!=0 or self.mq.count([GPIO_B, FALLING_EDGE])!=0:
                         stop_event.set()
-                        response = requests.post(self.cancel_url)
+                        try:
+                            response = requests.post(self.cancel_url)
+                        except Exception as e:
+                            print(f"Error: {e}")
                         await asyncio.sleep(0.1)  # Give a short time for the audio stream to stop
                         await self.play_sound_async(self.cancel_sound)
                         audioS.join()
                         self.mq.clear()
                         break
-                stop_event.set()
                 self.mq.clear()
-                self.active_operation = False
                 try:
                     audioS.join()
                 except:
@@ -260,8 +296,7 @@ class QueuedMessageHandler:
             elif self.state == State.CASEB:
                 print('CASE B')
                 result = None
-                self.current_task = asyncio.create_task(self.play_sound_async(self.read_sound))
-                self.caseb_start_time = time.time()
+                asyncio.create_task(self.play_sound_async(self.chat_sound))
                 stop_event = threading.Event()
                 que = Queue()
                 audioR = threading.Thread(target=lambda q, arg1: q.put(self.input_speech(arg1)), args=(que, stop_event), daemon=True)
@@ -308,7 +343,7 @@ class QueuedMessageHandler:
                     except:
                         pass
                     self.state = State.IDLE
-
+                
     async def play_sound_async(self, sound):
         await asyncio.get_event_loop().run_in_executor(None, self.play_sound, sound)
 
