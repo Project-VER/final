@@ -1,0 +1,14 @@
+{
+    "Response Length": {
+        "setting": "Response Length",
+        "value": 30.0
+    },
+    "Device Mode": {
+        "setting": "Device Mode",
+        "value": "describe"
+    },
+    "Playback Speed": {
+        "setting": "Playback Speed",
+        "value": 1.3
+    }
+}
