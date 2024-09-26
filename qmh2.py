@@ -1,3 +1,4 @@
+#!/home/ver/env2/bin/python
 '''
 File: qmh2.py
 Created Date: Wednesday, September 25th 2024, 11:57:47 pm
