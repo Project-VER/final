@@ -32,10 +32,73 @@ import re
 from vosk import Model, KaldiRecognizer
 import json
 
+from picamera2 import Picamera2
+from libcamera import Transform, controls
+import cv2
+import numpy as np
+from PIL import Image
+
+
 FALLING_EDGE = "Falling"
 RISING_EDGE = "Rising"
 GPIO_A = 2
 GPIO_B = 3
+
+class CameraController:
+    def __init__(self):
+        self.picam2 = Picamera2()
+        #camera_config = self.picam2.create_still_configuration(
+        camera_config = self.picam2.create_video_configuration(
+            #transform=Transform(vflip=1, hflip=1),
+            # main={"size": (1920, 1080)},  # 1080p resolution
+            # main={"size": (2304, 1296)},
+            main={"size": (4608, 2592)}, #picam3 max resolution
+            # controls={"FrameRate": 30}    # Set frame rate to 30 fps
+            controls={"FrameRate": 15}    # Set frame rate to 15 fps for 4K
+        )
+        self.picam2.configure(camera_config)
+        self.picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous, "AfRange": controls.AfRangeEnum.Full})
+        #self.picam2.set_controls({
+        #    "AfMode": controls.AfModeEnum.Continuous, #Continous Autofocus mode 
+        #    "AfRange": controls.AfRangeEnum.Full, #Full focus range
+        #    "AeEnable": True, #Auto exposure
+        #    "AwbEnable": True, #Auto white balance
+        #    "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality, #High noise reduction
+        #    })
+        self.picam2.start()
+        time.sleep(2)  # Allow camera to initialize
+
+        self.frame_buffer = [None] * 10
+        self.frame_pointer = 0
+
+    def capture_image(self):
+        image = None
+        #self.picam2.set_controls({"AfTrigger":1})
+        #time.sleep(2)
+        
+        metadata = self.picam2.capture_metadata()
+        
+        while image is None:
+            focus_state = metadata.get('AfState', None)
+            print(focus_state)
+            time.sleep(0.1)
+            try:
+                if focus_state == 2:
+                    image = self.picam2.capture_array()
+                    im = Image.fromarray(image.astype('uint8'))
+                    im.save("best_overall_imageq.png")
+            except:
+                time.sleep(0.1)
+                pass
+            
+        return "best_overall_imageq.png"
+
+    #def get_best_image(self):
+        #best_image_index = pick_best_image(self.frame_buffer)
+        #rgb = cv2.cvtColor(self.frame_buffer[best_image_index], cv2.COLOR_BGR2RGB)
+        #cv2.imwrite('best_image.png', rgb)
+        #print("Best image is:", best_image_index)
+        #return 'best_image.png'  # Return the encrypted image filename
 
 class State(Enum):
     IDLE = 0
@@ -77,6 +140,7 @@ class AudioStreamer(object):
         )
         
         files = {'file': open(image_path, 'rb')}
+        #files = {'file': image_path}
         data = {'text': text}
         
         no_loop_event = threading.Event()
@@ -190,7 +254,9 @@ class QueuedMessageHandler:
         self.samplerate = int(self.device_info["default_samplerate"])
         self.rec = KaldiRecognizer(self.model, self.samplerate)
         self.q = queue.Queue()
-
+        
+        self.camera_controller = CameraController()
+        
     def load_sounds(self):
         sound_files = {
             "cancel": '/home/ver/cr2/lib_client/cancel.wav',
@@ -318,7 +384,7 @@ class QueuedMessageHandler:
         self.mq.clear()
 
     async def state_run(self):
-        await self.audio_threader(self.sound_player.play_cancellable_sound, input_cancel = False, target_sound = 'helper')
+        #await self.audio_threader(self.sound_player.play_cancellable_sound, input_cancel = False, target_sound = 'helper')
                     
         while self.running:
             await asyncio.sleep(0.01)
@@ -333,9 +399,11 @@ class QueuedMessageHandler:
             elif self.state == State.CASEA:
                 print('CASE A')
                 asyncio.create_task(self.sound_player.play_sound_async('desc'))
-
+                
+                image_array = self.camera_controller.capture_image()
+                
                 await self.audio_threader(self.ASC.run_audio_stream, input_cancel = False,
-                    target_sound = None, image_path = '/home/ver/cr2/lib_client/mpv-shot0001.jpg',
+                    target_sound = None, image_path = image_array,
                     prompt = self.describe_prompt)
 
                 self.state = State.IDLE
@@ -346,7 +414,8 @@ class QueuedMessageHandler:
 
                 result = None
                 que = Queue()
-
+                image_array = self.camera_controller.capture_image()
+                
                 await self.audio_threader(target_function = lambda q, arg1: q.put(self.input_speech(arg1)), input_cancel = True,
                     target_sound = None, image_path = None, prompt = None, que = que)
 
@@ -355,7 +424,7 @@ class QueuedMessageHandler:
 
                 if result != None:
                     await self.audio_threader(self.ASC.run_audio_stream, input_cancel = False,
-                        target_sound = None, image_path = '/home/ver/cr2/lib_client/mpv-shot0001.jpg',
+                        target_sound = None, image_path = image_array,
                         prompt = result)
                     self.state = State.IDLE
                 else:
