@@ -44,6 +44,55 @@ RISING_EDGE = "Rising"
 GPIO_A = 2
 GPIO_B = 3
 
+import time
+from picamera2 import Picamera2
+from picamera2 import controls
+import numpy as np
+from threading import Thread, Lock
+
+class CameraController:
+    def __init__(self):
+        self.picam2 = Picamera2()
+        camera_config = self.picam2.create_video_configuration(
+            main={"size": (4608, 2592)},  # picam3 max resolution
+            controls={"FrameRate": 15}    # Set frame rate to 15 fps for 4K
+        )
+        self.picam2.configure(camera_config)
+        self.picam2.set_controls({
+            "AfMode": controls.AfModeEnum.Continuous,
+            "AfRange": controls.AfRangeEnum.Full,
+            "AeEnable": True,
+            "AwbEnable": True,
+            "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality,
+        })
+        self.picam2.start()
+        time.sleep(2)  # Allow camera to initialize
+
+        self.latest_frame = None
+        self.frame_lock = Lock()
+        self.running = True
+        self.recording_thread = Thread(target=self._record_continuously)
+        self.recording_thread.start()
+
+    def _record_continuously(self):
+        while self.running:
+            frame = self.picam2.capture_array()
+            with self.frame_lock:
+                self.latest_frame = frame
+            time.sleep(1 / 15)  # Adjust based on your desired frame rate
+
+    def capture_image(self):
+        with self.frame_lock:
+            if self.latest_frame is not None:
+                return self.latest_frame.copy()
+            else:
+                return None
+
+    def stop(self):
+        self.running = False
+        self.recording_thread.join()
+        self.picam2.stop()
+
 class CameraController:
     def __init__(self):
         self.picam2 = Picamera2()
