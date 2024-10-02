@@ -41,25 +41,10 @@ def get_config():
 def run_flask():
     app.run(port=5000)
 
-def print_config(config):
-    input_text = config['prompt']['input_text']
-    max_length = config['prompt']['max_length']
-    print(f"Input Text: {input_text}")
-    print(f"Max Length: {max_length}")
-    print("-" * 30)  # Separator for readability
-
 def main_program():
     previous_config = None
     while True:
         current_config = load_config()
-        
-        if previous_config is None:
-            print("Initial configuration:")
-            print_config(current_config)
-        elif current_config != previous_config:
-            print("Configuration updated:")
-            print_config(current_config)
-        
         previous_config = current_config
         time.sleep(5)  # Check for changes every 5 seconds
 
