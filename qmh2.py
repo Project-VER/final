@@ -56,7 +56,7 @@ class CameraController:
         camera_config = self.picam2.create_video_configuration(
             main={"size": (1920, 1080)},  # 1080p resolution
             #main={"size": (4608, 2592)},  # picam3 max resolution
-            controls={"FrameRate": 15}    # Set frame rate to 15 fps for 4K
+            controls={"FrameRate": 20}    # Set frame rate to 15 fps for 4K
         )
         self.picam2.configure(camera_config)
         self.picam2.set_controls({"AfMode": 2, "AfRange": 2})
@@ -88,62 +88,6 @@ class CameraController:
         self.running = False
         self.recording_thread.join()
         self.picam2.stop()
-
-# class CameraController:
-    # def __init__(self):
-        # self.picam2 = Picamera2()
-        # #camera_config = self.picam2.create_still_configuration(
-        # camera_config = self.picam2.create_video_configuration(
-            # #transform=Transform(vflip=1, hflip=1),
-            # # main={"size": (1920, 1080)},  # 1080p resolution
-            # # main={"size": (2304, 1296)},
-            # main={"size": (4608, 2592)}, #picam3 max resolution
-            # # controls={"FrameRate": 30}    # Set frame rate to 30 fps
-            # controls={"FrameRate": 15}    # Set frame rate to 15 fps for 4K
-        # )
-        # self.picam2.configure(camera_config)
-        # self.picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous, "AfRange": controls.AfRangeEnum.Full})
-        # #self.picam2.set_controls({
-        # #    "AfMode": controls.AfModeEnum.Continuous, #Continous Autofocus mode 
-        # #    "AfRange": controls.AfRangeEnum.Full, #Full focus range
-        # #    "AeEnable": True, #Auto exposure
-        # #    "AwbEnable": True, #Auto white balance
-        # #    "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality, #High noise reduction
-        # #    })
-        # self.picam2.start()
-        # time.sleep(2)  # Allow camera to initialize
-
-        # self.frame_buffer = [None] * 10
-        # self.frame_pointer = 0
-
-    # def capture_image(self):
-        # image = None
-        # #self.picam2.set_controls({"AfTrigger":1})
-        # #time.sleep(2)
-        
-        # metadata = self.picam2.capture_metadata()
-        
-        # while image is None:
-            # focus_state = metadata.get('AfState', None)
-            # print(focus_state)
-            # time.sleep(0.1)
-            # try:
-                # if focus_state == 2:
-                    # image = self.picam2.capture_array()
-                    # im = Image.fromarray(image.astype('uint8'))
-                    # im.save("best_overall_imageq.png")
-            # except:
-                # time.sleep(0.1)
-                # pass
-            
-        # return "best_overall_imageq.png"
-
-    #def get_best_image(self):
-        #best_image_index = pick_best_image(self.frame_buffer)
-        #rgb = cv2.cvtColor(self.frame_buffer[best_image_index], cv2.COLOR_BGR2RGB)
-        #cv2.imwrite('best_image.png', rgb)
-        #print("Best image is:", best_image_index)
-        #return 'best_image.png'  # Return the encrypted image filename
 
 class State(Enum):
     IDLE = 0
