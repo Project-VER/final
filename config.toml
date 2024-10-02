@@ -1,0 +1,14 @@
+[prompt]
+input_text = "Use natural language suitable for conversion to speech."
+max_length = 40
+
+[button_interface]
+color = "blue"
+size = "medium"
+label = "Submit"
+
+[network]
+host = "localhost"
+port = 8080
+timeout = 30
+retry_attempts = 3

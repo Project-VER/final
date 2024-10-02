@@ -2,7 +2,6 @@
 '''
 File: qmh2.py
 Created Date: Wednesday, September 25th 2024, 11:57:47 pm
-Author: alex-crouch
 
 Project Ver 2024
 '''
@@ -32,23 +31,20 @@ import re
 from vosk import Model, KaldiRecognizer
 import json
 
-from picamera2 import Picamera2
+from picamera2 import Picamera2, controls
 from libcamera import Transform, controls
 import cv2
 import numpy as np
 from PIL import Image
+
+import toml
+from threading import Thread, Lock
 
 
 FALLING_EDGE = "Falling"
 RISING_EDGE = "Rising"
 GPIO_A = 2
 GPIO_B = 3
-
-import time
-from picamera2 import Picamera2
-from picamera2 import controls
-import numpy as np
-from threading import Thread, Lock
 
 class CameraController:
     def __init__(self):
@@ -60,7 +56,6 @@ class CameraController:
         )
         self.picam2.configure(camera_config)
         self.picam2.set_controls({"AfMode": 2, "AfRange": 2})
-        #self.picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous, "AfRange": controls.AfRangeEnum.Full})
         self.picam2.start()
         time.sleep(2)  # Allow camera to initialize
 
@@ -89,67 +84,12 @@ class CameraController:
         self.recording_thread.join()
         self.picam2.stop()
 
-# class CameraController:
-    # def __init__(self):
-        # self.picam2 = Picamera2()
-        # #camera_config = self.picam2.create_still_configuration(
-        # camera_config = self.picam2.create_video_configuration(
-            # #transform=Transform(vflip=1, hflip=1),
-            # # main={"size": (1920, 1080)},  # 1080p resolution
-            # # main={"size": (2304, 1296)},
-            # main={"size": (4608, 2592)}, #picam3 max resolution
-            # # controls={"FrameRate": 30}    # Set frame rate to 30 fps
-            # controls={"FrameRate": 15}    # Set frame rate to 15 fps for 4K
-        # )
-        # self.picam2.configure(camera_config)
-        # self.picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous, "AfRange": controls.AfRangeEnum.Full})
-        # #self.picam2.set_controls({
-        # #    "AfMode": controls.AfModeEnum.Continuous, #Continous Autofocus mode 
-        # #    "AfRange": controls.AfRangeEnum.Full, #Full focus range
-        # #    "AeEnable": True, #Auto exposure
-        # #    "AwbEnable": True, #Auto white balance
-        # #    "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality, #High noise reduction
-        # #    })
-        # self.picam2.start()
-        # time.sleep(2)  # Allow camera to initialize
-
-        # self.frame_buffer = [None] * 10
-        # self.frame_pointer = 0
-
-    # def capture_image(self):
-        # image = None
-        # #self.picam2.set_controls({"AfTrigger":1})
-        # #time.sleep(2)
-        
-        # metadata = self.picam2.capture_metadata()
-        
-        # while image is None:
-            # focus_state = metadata.get('AfState', None)
-            # print(focus_state)
-            # time.sleep(0.1)
-            # try:
-                # if focus_state == 2:
-                    # image = self.picam2.capture_array()
-                    # im = Image.fromarray(image.astype('uint8'))
-                    # im.save("best_overall_imageq.png")
-            # except:
-                # time.sleep(0.1)
-                # pass
-            
-        # return "best_overall_imageq.png"
-
-    #def get_best_image(self):
-        #best_image_index = pick_best_image(self.frame_buffer)
-        #rgb = cv2.cvtColor(self.frame_buffer[best_image_index], cv2.COLOR_BGR2RGB)
-        #cv2.imwrite('best_image.png', rgb)
-        #print("Best image is:", best_image_index)
-        #return 'best_image.png'  # Return the encrypted image filename
-
 class State(Enum):
     IDLE = 0
     CASEA = 1
     CASEB = 2
-    BOOT = 3
+    HELP = 3
+    BOOT = 4
 
 class AudioStreamer(object):
     def __init__(self, base_address='192.168.193.33', port=8000, samplerate=24000, channels=1):
@@ -185,7 +125,6 @@ class AudioStreamer(object):
         )
         
         files = {'file': open(image_path, 'rb')}
-        #files = {'file': image_path}
         data = {'text': text}
         
         no_loop_event = threading.Event()
@@ -290,9 +229,11 @@ class QueuedMessageHandler:
         self.sound_player = SoundPlayer()
         self.load_sounds()
 
-        # Set the pre-configured prompts
-        self.describe_prompt = 'Describe the content in 40 words or less. Use natural language suitable for conversion to speech.'
-        
+        # Load configuration and set up config-related attributes
+        self.config = self.load_config()
+        self.config_lock = Lock()
+        self.update_describe_prompt()
+
         # Initialise Vosk model for speech recognition
         self.model = Model(lang="en-us")
         self.device_info = sd.query_devices(None, "input")
@@ -301,6 +242,38 @@ class QueuedMessageHandler:
         self.q = queue.Queue()
         
         self.camera_controller = CameraController()
+    
+    def load_config(self):
+        try:
+            with open('config.toml', 'r') as f:
+                return toml.load(f)
+        except Exception as e:
+            print(f"Error loading configuration: {e}")
+            return {
+                "prompt": {
+                    "input_text": "Use natural language suitable for conversion to speech.",
+                    "max_length": 40
+                }
+            }
+
+    def update_describe_prompt(self):
+        with self.config_lock:
+            input_prompt = self.config['prompt']['input_text']
+            max_length = self.config['prompt']['max_length']
+            self.describe_prompt = f'Describe the content in {max_length} words or less. {input_prompt}'
+
+    async def check_config_updates(self):
+        while self.running:
+            try:
+                new_config = self.load_config()
+                if new_config != self.config:
+                    with self.config_lock:
+                        self.config = new_config
+                    self.update_describe_prompt()
+                    print("Configuration updated")
+            except Exception as e:
+                print(f"Error checking configuration updates: {e}")
+            await asyncio.sleep(5)  # Check every 5 seconds
         
     def load_sounds(self):
         sound_files = {
@@ -429,8 +402,6 @@ class QueuedMessageHandler:
         self.mq.clear()
 
     async def state_run(self):
-        #await self.audio_threader(self.sound_player.play_cancellable_sound, input_cancel = False, target_sound = 'helper')
-                    
         while self.running:
             await asyncio.sleep(0.01)
 
@@ -487,7 +458,8 @@ class QueuedMessageHandler:
     async def run(self):
         await asyncio.gather(
             self.async_watch_line_value("/dev/gpiochip4", [2, 3], self.done_fd),
-            self.state_run())
+            self.state_run()),
+            self.check_config_updates())
 
     def stop(self):
         self.running = False
