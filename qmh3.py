@@ -458,7 +458,7 @@ class QueuedMessageHandler:
     async def run(self):
         await asyncio.gather(
             self.async_watch_line_value("/dev/gpiochip4", [2, 3], self.done_fd),
-            self.state_run()),
+            self.state_run(),
             self.check_config_updates())
 
     def stop(self):

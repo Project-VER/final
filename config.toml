@@ -1,6 +1,6 @@
 [prompt]
 input_text = "Use natural language suitable for conversion to speech."
-max_length = 40
+max_length = 30
 
 [button_interface]
 color = "blue"
