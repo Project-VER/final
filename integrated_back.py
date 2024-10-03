@@ -1,6 +1,10 @@
 import asyncio
 import json
 import os
+import uuid
+import platform
+import re
+import subprocess
 from bleak import BleakScanner, BleakClient
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
@@ -15,6 +19,34 @@ async def scan_for_devices():
     devices = await BleakScanner.discover()
     return [{"name": device.name or f"Unknown Device ({device.address})", "address": device.address} for device in devices]
 
+def get_bluetooth_address(device_name):
+    os_type = platform.system()
+    try:
+        if os_type == "Darwin":
+            result = subprocess.run(['system_profiler', 'SPBluetoothDataType'], capture_output=True, text=True)
+            bluetooth_info = result.stdout
+            device_section = re.search(f"{device_name}:.*?(?=\\n\\n)", bluetooth_info, re.DOTALL)
+
+            if device_section:
+                address_match = re.search(r"Address: (([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})", device_section.group())
+                if address_match:
+                    return address_match.group(1)
+
+        elif os_type == "Linux":
+            result = subprocess.run(['bluetoothctl', 'paired-devices'], capture_output=True, text=True)
+            devices = result.stdout.strip().split('\n')
+
+            for device in devices:
+                if device_name.lower() in device.lower():
+                    address_match = re.search(r"(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})", device)
+                    if address_match:
+                        return address_match.group(1)
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error running command: {e}")
+    
+    return None
+
 async def connect_to_device(address):
     max_retries = 3
     retry_delay = 2
@@ -23,21 +55,21 @@ async def connect_to_device(address):
         try:
             client = BleakClient(address)
             await client.connect()
-            connected_devices[address] = client
+            connected_devices[address] = {"client": client, "address": address}  # Store the client and address
             print(f"Connected to {address}")
-            return True
+            return address  # Return the address instead of UID
         except Exception as e:
             print(f"Connection attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delay)
     
     print(f"Failed to connect to {address} after {max_retries} attempts")
-    return False
+    return None
 
 async def disconnect_device(address):
     client = connected_devices.get(address)
     if client:
-        await client.disconnect()
+        await client["client"].disconnect()
         del connected_devices[address]
         print(f"Disconnected from {address}")
         return True
@@ -49,7 +81,7 @@ async def monitor_connection(address):
             print(f"Device {address} is no longer in the connected_devices list")
             break
         
-        client = connected_devices[address]
+        client = connected_devices[address]["client"]
         if not client.is_connected:
             print(f"Lost connection to {address}. Attempting to reconnect...")
             del connected_devices[address]
@@ -74,49 +106,94 @@ def scan():
         return jsonify({"success": True, "devices": devices})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    
+def get_bluetooth_address_mac(device_name):
+    try:
+        result = subprocess.run(['system_profiler', 'SPBluetoothDataType'], capture_output=True, text=True)
+        bluetooth_info = result.stdout
+        device_section = re.search(f"{device_name}:.*?(?=\n\n)", bluetooth_info, re.DOTALL)
+        
+        if device_section:
+            address_match = re.search(r"Address: (([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})", device_section.group())
+            if address_match:
+                return address_match.group(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running system_profiler: {e}")
+    
+    return None
 
+def get_bluetooth_address_linux(device_name):
+    try:
+        result = subprocess.run(['bluetoothctl', 'paired-devices'], capture_output=True, text=True)
+        devices = result.stdout.strip().split('\n')
+        
+        for device in devices:
+            if device_name.lower() in device.lower():
+                address_match = re.search(r"(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})", device)
+                if address_match:
+                    return address_match.group(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running bluetoothctl: {e}")
+    
+    return None
+    
+def get_bluetooth_address(device_name):
+    system = platform.system()
+    if system == "Darwin":  # macOS
+        print("System is Mac")
+        return get_bluetooth_address_mac(device_name)
+    elif system == "Linux":
+        print("System is Linux")
+        return get_bluetooth_address_linux(device_name)
+    else:
+        print(f"Unsupported operating system: {system}")
+        return None
+    
 @app.route('/connect', methods=['POST'])
 def connect():
     address = request.json.get('address')
-    if not address:
-        return jsonify({"success": False, "error": "No address provided"}), 400
-    
-    async def connect_and_monitor(address):
-        success = await connect_to_device(address)
-        if success:
-            connection_tasks[address] = asyncio.create_task(monitor_connection(address))
-        return success
-    
-    try:
-        success = asyncio.run(connect_and_monitor(address))
-        if success:
-            return jsonify({"success": True, "message": f"Connected to {address}"})
-        else:
-            return jsonify({"success": False, "error": f"Failed to connect to {address}"}), 500
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    device_name = request.json.get('name')
+    if not address or not device_name:
+        return jsonify({"success": False, "error": "No address or device name provided"}), 400
 
-@app.route('/disconnect', methods=['POST'])
-def disconnect():
-    address = request.json.get('address')
-    if not address:
-        return jsonify({"success": False, "error": "No address provided"}), 400
-    
+    async def connect_and_monitor(address):
+        connected_address = await connect_to_device(address)
+        if connected_address:
+            connection_tasks[address] = asyncio.create_task(monitor_connection(address))
+            return connected_address
+        return None
+
     try:
-        success = asyncio.run(disconnect_device(address))
-        if success:
-            if address in connection_tasks:
-                connection_tasks[address].cancel()
-                del connection_tasks[address]
-            return jsonify({"success": True, "message": f"Disconnected from {address}"})
+        connected_address = asyncio.run(connect_and_monitor(address))
+        if connected_address:
+            print(f"Connected to {device_name} at {connected_address}")
+            bluetooth_address = get_bluetooth_address(device_name)
+            print(f"Retrieved Bluetooth address: {bluetooth_address}")
+            
+            if platform.system() == "Darwin":
+                if bluetooth_address:
+                    command = f"blueutil --pair {bluetooth_address}"
+                    try:
+                        status = os.popen(command).read()
+                        print(f"Pairing command output: {status}")
+                    except Exception as e:
+                        print(f"Error executing pairing command: {e}")
+                else:
+                    print(f"Could not retrieve Bluetooth address for {device_name}")
+
+            return jsonify({
+                "success": True, 
+                "message": f"Connected to {device_name}", 
+                "bluetooth_address": bluetooth_address or connected_address
+            })
         else:
-            return jsonify({"success": False, "error": f"Device {address} not connected"}), 400
+            return jsonify({"success": False, "error": f"Failed to connect to {device_name}"}), 500
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/connection-status', methods=['GET'])
 def connection_status():
-    statuses = {address: client.is_connected for address, client in connected_devices.items()}
+    statuses = {address: client["client"].is_connected for address, client in connected_devices.items()}
     return jsonify({"success": True, "statuses": statuses})
 
 @app.route('/update-settings', methods=['POST'])
@@ -147,14 +224,11 @@ def update_settings():
         setting_value = incoming_data['value']
 
         if setting_name == "Default Settings":
-            # Update multiple settings based on Default Settings
             defaults = setting_value
             data["Device Mode"] = {"setting": "Device Mode", "value": defaults.get("DeviceMode", "describe")}
             data["Response Length"] = {"setting": "Response Length", "value": float(defaults.get("ResponseLength", "25"))}
             data["Playback Speed"] = {"setting": "Playback Speed", "value": float(defaults.get("PlaybackSpeed", "1"))}
         else:
-            # Update or add a specific setting
-            # Convert to float if applicable
             if setting_name in ["Response Length", "Playback Speed"]:
                 setting_value = float(setting_value)
             data[setting_name] = {"setting": setting_name, "value": setting_value}
