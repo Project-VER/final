@@ -5,10 +5,15 @@ import time
 import asyncio
 from bleak import BleakScanner, BleakClient
 from bleak.exc import BleakError
+import logging
 
 app = Flask(__name__)
 
 CONFIG_FILE = 'config.toml'
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def load_config():
     with open(CONFIG_FILE, 'r') as f:
@@ -31,7 +36,6 @@ def config_update():
     config = load_config()
     return render_template('config_update.html', config=config)
 
-
 @app.route('/scan_devices')
 def scan_devices():
     try:
@@ -42,31 +46,44 @@ def scan_devices():
 
 @app.route('/connect_device/<address>')
 def connect_device(address):
+    logger.info(f"Received connection request for device: {address}")
     try:
         success, message = asyncio.run(bluetooth_connect(address))
+        logger.info(f"Connection attempt result: success={success}, message={message}")
         return jsonify({"success": success, "message": message})
     except Exception as e:
+        logger.error(f"Exception during connection attempt: {str(e)}")
         return jsonify({"success": False, "message": str(e)})
 
 async def bluetooth_scan(timeout=10):
+    logger.info(f"Starting Bluetooth scan with timeout {timeout} seconds")
     devices = await BleakScanner.discover(timeout=timeout)
+    logger.info(f"Scan complete. Found {len(devices)} devices")
     return [{"name": d.name or "Unknown", "address": d.address} for d in devices]
 
 async def bluetooth_connect(address, timeout=30):
+    logger.info(f"Attempting to connect to device {address} with timeout {timeout} seconds")
     try:
         async with BleakClient(address, timeout=timeout) as client:
+            logger.info("BleakClient created, attempting to connect")
             await client.connect()
+            logger.info("Connect method called")
             if client.is_connected:
+                logger.info("Client reports as connected")
                 # Here you might need to add specific steps for your headphones
                 # For example, you might need to write to certain characteristics to enable audio
                 return True, "Connected successfully"
             else:
+                logger.warning("Client does not report as connected after connect() call")
                 return False, "Failed to establish connection"
     except asyncio.TimeoutError:
+        logger.error("Connection attempt timed out")
         return False, "Connection attempt timed out"
     except BleakError as e:
+        logger.error(f"BleakError during connection: {str(e)}")
         return False, f"Bluetooth error: {str(e)}"
     except Exception as e:
+        logger.error(f"Unexpected error during connection: {str(e)}")
         return False, f"Unexpected error: {str(e)}"
 
 @app.route('/update_config', methods=['POST'])
@@ -107,10 +124,10 @@ def run_flask():
 
 if __name__ == '__main__':
     # Start Flask in a separate thread
-    flask_thread = threading.Thread(target=run_flask)
+    flask_thread = threading.Thread(target=lambda: app.run(port=5000, debug=True, use_reloader=False))
     flask_thread.start()
 
     # Main loop
     while True:
         time.sleep(5)  # Check for changes every 5 seconds
-        print("Checking for config changes...")
+        logger.debug("Checking for config changes...")
