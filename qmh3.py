@@ -45,6 +45,7 @@ FALLING_EDGE = "Falling"
 RISING_EDGE = "Rising"
 GPIO_A = 2
 GPIO_B = 3
+GPIO_C = 4
 
 class CameraController:
     def __init__(self):
@@ -411,6 +412,8 @@ class QueuedMessageHandler:
                     self.state = State.CASEA
                 if self.mq.count([GPIO_B, FALLING_EDGE])!=0:
                     self.state = State.CASEB
+                if self.mq.count([GPIO_C, FALLING_EDGE])!=0:
+                    self.state = State.HELP
 
             elif self.state == State.CASEA:
                 print('CASE A')
@@ -454,10 +457,18 @@ class QueuedMessageHandler:
                     await self.sound_player.play_sound_async('cancel')
                     self.mq.clear()
                     self.state = State.IDLE
-                
+            
+            elif self.state == State.HELP:
+                print('Help')
+                await self.audio_threader(self.ASC.sound_player.play_sound_async, input_cancel = False,
+                    target_sound = 'helper', image_path = None,
+                    prompt = None)
+                self.mq.clear()
+                self.state = State.IDLE
+
     async def run(self):
         await asyncio.gather(
-            self.async_watch_line_value("/dev/gpiochip4", [2, 3], self.done_fd),
+            self.async_watch_line_value("/dev/gpiochip4", [GPIO_A, GPIO_B, GPIO_C], self.done_fd),
             self.state_run(),
             self.check_config_updates())
 
