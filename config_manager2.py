@@ -119,12 +119,9 @@ async def bluetooth_connect(address):
         print(f"Failed to connect: {e}")
         return False
 
-def run_flask():
-    app.run(host = '192.168.193.217', port=5000)
-
 if __name__ == '__main__':
     # Start Flask in a separate thread
-    flask_thread = threading.Thread(target=lambda: app.run(port=5000, debug=True, use_reloader=False))
+    flask_thread = threading.Thread(target=lambda: app.run(host = '192.168.193.217', port=5000, debug=True, use_reloader=False))
     flask_thread.start()
 
     # Main loop
