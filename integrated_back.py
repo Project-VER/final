@@ -180,7 +180,14 @@ def connect():
                         print(f"Error executing pairing command: {e}")
                 else:
                     print(f"Could not retrieve Bluetooth address for {device_name}")
-
+            if platform.system() == "Linux":
+               if bluetooth_address:
+                    command = f"blueutil --pair {bluetooth_address}" #insert linux command
+                    try:
+                        status = os.popen(command).read()
+                        print(f"Pairing command output: {status}")
+                    except Exception as e:
+                     print(f"Error executing command: {e}")
             return jsonify({
                 "success": True, 
                 "message": f"Connected to {device_name}", 
@@ -272,4 +279,4 @@ def view_settings():
     return get_settings()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host = '192.168.193.217',debug=True)
