@@ -4,6 +4,7 @@ import threading
 import time
 import asyncio
 from bleak import BleakScanner, BleakClient
+from bleak.exc import BleakError
 
 app = Flask(__name__)
 
@@ -30,15 +31,43 @@ def config_update():
     config = load_config()
     return render_template('config_update.html', config=config)
 
+
 @app.route('/scan_devices')
 def scan_devices():
-    devices = asyncio.run(bluetooth_scan())
-    return jsonify(devices)
+    try:
+        devices = asyncio.run(bluetooth_scan())
+        return jsonify({"success": True, "devices": devices})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route('/connect_device/<address>')
 def connect_device(address):
-    success = asyncio.run(bluetooth_connect(address))
-    return jsonify({"success": success})
+    try:
+        success, message = asyncio.run(bluetooth_connect(address))
+        return jsonify({"success": success, "message": message})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+async def bluetooth_scan(timeout=10):
+    devices = await BleakScanner.discover(timeout=timeout)
+    return [{"name": d.name or "Unknown", "address": d.address} for d in devices]
+
+async def bluetooth_connect(address, timeout=30):
+    try:
+        async with BleakClient(address, timeout=timeout) as client:
+            await client.connect()
+            if client.is_connected:
+                # Here you might need to add specific steps for your headphones
+                # For example, you might need to write to certain characteristics to enable audio
+                return True, "Connected successfully"
+            else:
+                return False, "Failed to establish connection"
+    except asyncio.TimeoutError:
+        return False, "Connection attempt timed out"
+    except BleakError as e:
+        return False, f"Bluetooth error: {str(e)}"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
 
 @app.route('/update_config', methods=['POST'])
 def update_config():

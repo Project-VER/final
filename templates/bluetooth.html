@@ -13,33 +13,64 @@
             <button id="scanButton" class="mb-4 py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600">
                 Scan for Devices
             </button>
+            <div id="statusMessage" class="mb-4 text-sm"></div>
             <div id="deviceList" class="space-y-2"></div>
             <a href="/" class="block mt-4 text-blue-500 hover:underline">Back to Home</a>
         </div>
     </div>
 
     <script>
-        document.getElementById('scanButton').addEventListener('click', async () => {
-            const response = await fetch('/scan_devices');
-            const devices = await response.json();
-            const deviceList = document.getElementById('deviceList');
-            deviceList.innerHTML = '';
-            devices.forEach(device => {
-                const button = document.createElement('button');
-                button.textContent = `${device.name} (${device.address})`;
-                button.className = 'block w-full py-2 px-4 bg-gray-200 text-left rounded hover:bg-gray-300 mb-2';
-                button.addEventListener('click', async () => {
-                    const connectResponse = await fetch(`/connect_device/${device.address}`);
-                    const result = await connectResponse.json();
-                    if (result.success) {
-                        alert('Connected successfully!');
+        const scanButton = document.getElementById('scanButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const deviceList = document.getElementById('deviceList');
+
+        scanButton.addEventListener('click', async () => {
+            try {
+                statusMessage.textContent = "Scanning for devices...";
+                scanButton.disabled = true;
+                deviceList.innerHTML = '';
+
+                const response = await fetch('/scan_devices');
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.devices.length === 0) {
+                        statusMessage.textContent = "No devices found. Please try scanning again.";
                     } else {
-                        alert('Failed to connect.');
+                        statusMessage.textContent = `Found ${result.devices.length} device(s).`;
+                        result.devices.forEach(device => {
+                            const button = document.createElement('button');
+                            button.textContent = `${device.name} (${device.address})`;
+                            button.className = 'block w-full py-2 px-4 bg-gray-200 text-left rounded hover:bg-gray-300 mb-2';
+                            button.addEventListener('click', () => connectToDevice(device.address));
+                            deviceList.appendChild(button);
+                        });
                     }
-                });
-                deviceList.appendChild(button);
-            });
+                } else {
+                    statusMessage.textContent = `Error scanning: ${result.error}`;
+                }
+            } catch (error) {
+                statusMessage.textContent = `Error: ${error.message}`;
+            } finally {
+                scanButton.disabled = false;
+            }
         });
+
+        async function connectToDevice(address) {
+            try {
+                statusMessage.textContent = `Attempting to connect to ${address}...`;
+                const response = await fetch(`/connect_device/${address}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    statusMessage.textContent = "Connected successfully!";
+                } else {
+                    statusMessage.textContent = `Failed to connect: ${result.message}`;
+                }
+            } catch (error) {
+                statusMessage.textContent = `Error: ${error.message}`;
+            }
+        }
     </script>
 </body>
 </html>
