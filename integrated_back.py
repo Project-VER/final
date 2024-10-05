@@ -182,7 +182,9 @@ def connect():
                     print(f"Could not retrieve Bluetooth address for {device_name}")
             if platform.system() == "Linux":
                if bluetooth_address:
-                    command = f"blueutil --pair {bluetooth_address}" #insert linux command
+                    command = f"echo -e 'pair {bluetooth_address}\\nexit' | bluetoothctl"
+                    os.system(command)
+                    #command = f"blueutil --pair {bluetooth_address}" #insert linux command
                     try:
                         status = os.popen(command).read()
                         print(f"Pairing command output: {status}")
@@ -279,4 +281,5 @@ def view_settings():
     return get_settings()
 
 if __name__ == '__main__':
-    app.run(host = '192.168.193.217',debug=True)
+    app.run(host = '0.0.0.0', port = 2000, debug=True)
+
