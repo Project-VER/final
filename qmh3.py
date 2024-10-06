@@ -460,9 +460,10 @@ class QueuedMessageHandler:
             
             elif self.state == State.HELP:
                 print('Help')
-                await self.audio_threader(self.ASC.sound_player.play_sound_async, input_cancel = False,
-                    target_sound = 'helper', image_path = None,
-                    prompt = None)
+                await asyncio.create_task(self.sound_player.play_sound_async('helper'))
+                #await self.audio_threader(self.sound_player.play_sound_async, input_cancel = False,
+                #    target_sound = 'helper', image_path = None,
+                #    prompt = None)
                 self.mq.clear()
                 self.state = State.IDLE
 
