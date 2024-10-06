@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Config Update</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden md:max-w-2xl">
+        <div class="p-8">
+            <div class="uppercase tracking-wide text-sm text-indigo-500 font-semibold mb-4">Configuration Update</div>
+            <form id="configForm" class="space-y-6">
+                <div class="space-y-4">
+                    <h2 class="text-lg font-semibold">Prompt</h2>
+                    <div>
+                        <label for="input_text" class="block text-sm font-medium text-gray-700">Input Text:</label>
+                        <input type="text" id="input_text" name="prompt.input_text" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                    </div>
+                    <div>
+                        <label for="max_length" class="block text-sm font-medium text-gray-700">Max Length:</label>
+                        <input type="range" id="max_length" name="prompt.max_length" min="10" max="1000" step="10" class="mt-1 block w-full">
+                        <div id="lengthValue" class="text-sm text-gray-500 mt-1"></div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <h2 class="text-lg font-semibold">Button Interface</h2>
+                    <div>
+                        <label for="color" class="block text-sm font-medium text-gray-700">Color:</label>
+                        <input type="text" id="color" name="button_interface.color" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                    </div>
+                    <div>
+                        <label for="size" class="block text-sm font-medium text-gray-700">Size:</label>
+                        <input type="text" id="size" name="button_interface.size" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                    </div>
+                    <div>
+                        <label for="label" class="block text-sm font-medium text-gray-700">Label:</label>
+                        <input type="text" id="label" name="button_interface.label" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                    </div>
+                </div>
+                <div>
+                    <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Update Config
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const configForm = document.getElementById('configForm');
+        const lengthSlider = document.getElementById('max_length');
+        const lengthValue = document.getElementById('lengthValue');
+
+        lengthSlider.addEventListener('input', (e) => {
+            lengthValue.textContent = e.target.value;
+        });
+
+        // Load initial configuration
+        fetch('/get_config')
+            .then(response => response.json())
+            .then(config => {
+                for (const [section, values] of Object.entries(config)) {
+                    if (section !== 'network') {  // Skip network section
+                        for (const [key, value] of Object.entries(values)) {
+                            const input = document.querySelector(`[name="${section}.${key}"]`);
+                            if (input) {
+                                input.value = value;
+                                if (input.id === 'max_length') {
+                                    lengthValue.textContent = value;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+        configForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(configForm);
+            const config = {};
+
+            for (const [key, value] of formData.entries()) {
+                const [section, field] = key.split('.');
+                if (!config[section]) {
+                    config[section] = {};
+                }
+                config[section][field] = field === 'max_length' ? parseInt(value) : value;
+            }
+
+            fetch('/update_config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(config),
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('Configuration updated successfully!');
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                alert('An error occurred while updating the configuration.');
+            });
+        });
+    </script>
+</body>
+</html>
