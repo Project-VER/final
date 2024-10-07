@@ -1,14 +1,14 @@
-from integrated_back import app  # Import your Flask app
+from integrated_back import app  
 
-# Initialize variable to store the action
+
 device_mode_action = "No Action Required"
 
-# Use the test client to send a GET request to the Flask app
+
 with app.test_client() as client:
     response = client.get('/get-settings')
-    data = response.get_json()  # Correct method to retrieve JSON data from the response
+    data = response.get_json() 
 
-    # Debug: Print the full data received to verify
+    
     print(data)
 
     # Ensure the data is not None and 'Device Mode' key exists with the expected value
