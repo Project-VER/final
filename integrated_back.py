@@ -208,7 +208,7 @@ def update_settings():
     if not incoming_data or 'setting' not in incoming_data or 'value' not in incoming_data:
         return jsonify({"error": "Invalid data format. Expected {'setting': 'name', 'value': {...}}"}), 400
 
-    file_path = os.path.join(os.getcwd(), 'settings.json')
+    file_path = os.path.join(os.getcwd(), 'custom_setting.json')
     logger.info(f"Writing to file: {file_path}")
 
     try:
@@ -251,7 +251,7 @@ def update_settings():
 
 @app.route('/get-settings', methods=['GET'])
 def get_settings():
-    file_path = os.path.join(os.getcwd(), 'settings.json')
+    file_path = os.path.join(os.getcwd(), 'custom_setting.json')
     try:
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             with open(file_path, 'r') as f:
@@ -271,4 +271,5 @@ def view_settings():
     return get_settings()
 
 if __name__ == '__main__':
-    app.run(host='192.168.193.217', port=2000, debug=True)
+    app.run(host='0.0.0.0', port=2000, debug=True)
+    #app.run(host = '192.168.193.217', port = 2000, debug = True)
