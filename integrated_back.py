@@ -271,4 +271,4 @@ def view_settings():
     return get_settings()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=2000, debug=True)
+    app.run(host='192.168.193.217', port=2000, debug=True)
