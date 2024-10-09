@@ -8,7 +8,7 @@ Project Ver 2024
 
 import numpy as np
 import sounddevice as sd
-
+import wave
 def generate_phone_ping(freq1=1500, freq2=1800, duration=0.15, sample_rate=44100):
     """Generate a phone-like notification ping sound."""
     t = np.linspace(0, duration, int(sample_rate * duration), False)
@@ -133,6 +133,20 @@ def play_wait_ping():
     sd.play(ping, samplerate=44100)
     sd.wait()
 
+
+def save_click_as_wav(ping, filename='ping_sound.wav', sample_rate=44100):
+    """Save the click sound as a WAV file."""
+    # Convert to 16-bit PCM
+    click_int = np.int16(ping * 32767)
+    
+    with wave.open(filename, 'w') as wav_file:
+        wav_file.setnchannels(1)  # Mono
+        wav_file.setsampwidth(2)  # 2 bytes per sample
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(click_int.tobytes())
+    
+    print(f"ping sound saved as {filename}")
+
 if __name__ == "__main__":
     # print("Playing waiting tone 1")
     # play_tone(waiting_tone_1)
@@ -144,12 +158,13 @@ if __name__ == "__main__":
     # play_tone(waiting_tone_4)
     # print("Playing waiting tone 5")
     # play_tone(waiting_tone_5)
-    play_wait_ping()
-    time.sleep(2)
-    play_wait_ping()
+    # play_wait_ping()
+    # time.sleep(2)
+    # play_wait_ping()
 
+    save_click_as_wav(generate_phone_ping())
 
-    # play_phone_ping()
+    play_phone_ping()
     # time.sleep(2)
     # while True:
     #     play_phone_ping()

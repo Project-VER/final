@@ -9,6 +9,6 @@
     },
     "Device Mode": {
         "setting": "Device Mode",
-        "value": "describe"
+        "value": "Read any important text in this image that can describe important features of this image "
     }
 }

@@ -61,18 +61,34 @@ async def bluetooth_scan(timeout=10):
     logger.info(f"Scan complete. Found {len(devices)} devices")
     return [{"name": d.name or "Unknown", "address": d.address} for d in devices]
 
-async def bluetooth_connect(address, timeout=30):
+async def bluetooth_connect(address, timeout=60):
     logger.info(f"Attempting to connect to device {address} with timeout {timeout} seconds")
     try:
         async with BleakClient(address, timeout=timeout) as client:
             logger.info("BleakClient created, attempting to connect")
             await client.connect()
             logger.info("Connect method called")
+            
             if client.is_connected:
                 logger.info("Client reports as connected")
-                # Here you might need to add specific steps for your headphones
+                
+                # Wait for services to be resolved
+                start_time = time.time()
+                while not client.services.services and time.time() - start_time < 10:
+                    logger.info("Waiting for services to be resolved...")
+                    await asyncio.sleep(0.5)
+                
+                if not client.services.services:
+                    logger.warning("Services not resolved within timeout")
+                    return False, "Connected but services not resolved"
+                
+                logger.info("Services resolved")
+                
+                # Here you can add specific steps for your headphones
                 # For example, you might need to write to certain characteristics to enable audio
-                return True, "Connected successfully"
+                # await client.write_gatt_char(CHARACTERISTIC_UUID, ENABLE_AUDIO_COMMAND)
+                
+                return True, "Connected successfully and services resolved"
             else:
                 logger.warning("Client does not report as connected after connect() call")
                 return False, "Failed to establish connection"
